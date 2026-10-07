@@ -75,10 +75,20 @@ struct InvoiceEditorView: View {
 
     private var detailsSection: some View {
         Section("Details") {
-            if editable {
-                TextField("Invoice number", text: $invoice.number)
-                    .help("A draft's number is provisional. The final number is assigned "
-                          + "when you issue it, so the sequence stays gap-free.")
+            // Never editable, in either state. A draft shows what it *will* be called,
+            // because letting someone type a number here would either be overwritten on
+            // issue (confusing) or punch a hole in the sequence (illegal in much of the
+            // EU). Showing the next number is the useful half of that affordance.
+            if invoice.status == .draft {
+                LabeledContent("Invoice number") {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(service.nextIssuedNumber(on: invoice.issueDate))
+                            .monospacedDigit()
+                        Text("assigned when you issue this invoice")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             } else {
                 LabeledContent("Invoice number", value: invoice.number)
             }

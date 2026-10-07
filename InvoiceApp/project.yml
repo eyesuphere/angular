@@ -1,0 +1,118 @@
+# XcodeGen spec. Run `make project` (or `xcodegen generate`) to produce Invoices.xcodeproj.
+#
+# Why a spec rather than a committed .xcodeproj: a pbxproj is a 1,000-line file of
+# opaque UUIDs that conflicts on every branch and cannot be reviewed. This file is the
+# project, and the .xcodeproj is a build artifact — which is why it is gitignored.
+#
+# Build settings are not inlined here; they live in Config/*.xcconfig so they show up
+# in a diff and survive regeneration.
+
+name: Invoices
+
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+  groupSortPosition: top
+  # Xcode's own "recommended settings" prompt is noise when the settings are in
+  # xcconfigs; this keeps the generated project from drifting.
+  xcodeVersion: "1600"
+
+configs:
+  Debug: debug
+  Release: release
+
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+
+# InvoiceCore is consumed as a local Swift package, not as loose files compiled into
+# the app. That is what keeps `import InvoiceCore` meaningful and the module boundary
+# real: the app physically cannot reach into the core's internals.
+packages:
+  InvoiceCore:
+    path: .
+
+targets:
+  Invoices:
+    type: application
+    platform: macOS
+    configFiles:
+      Debug: Config/App.xcconfig
+      Release: Config/App.xcconfig
+    sources:
+      - path: App
+        excludes:
+          - "Info.plist"
+          - "Invoices.entitlements"
+      - path: App/Resources/Assets.xcassets
+        buildPhase: resources
+    dependencies:
+      - package: InvoiceCore
+        product: InvoiceCore
+    scheme:
+      testTargets:
+        - InvoiceCoreTests
+        - InvoicesAppTests
+      gatherCoverageData: true
+      coverageTargets:
+        - Invoices
+        - InvoiceCore
+
+  # The core's own tests. SwiftPM runs these too (`swift test`); this target exists so
+  # ⌘U in Xcode covers everything rather than only the app layer.
+  InvoiceCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    configFiles:
+      Debug: Config/Tests.xcconfig
+      Release: Config/Tests.xcconfig
+    sources:
+      - path: Tests/InvoiceCoreTests
+    dependencies:
+      - package: InvoiceCore
+        product: InvoiceCore
+    settings:
+      base:
+        PRODUCT_NAME: InvoiceCoreTests
+        # @testable needs the module built for testing; the package's own Debug build
+        # already is, but be explicit so a Release-configured run does not silently fail.
+        ENABLE_TESTABILITY: YES
+
+  # Tests for the app layer: the SwiftData models and InvoiceService. These cannot live
+  # in the SwiftPM package because they need SwiftData and the app's own types.
+  InvoicesAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    configFiles:
+      Debug: Config/Tests.xcconfig
+      Release: Config/Tests.xcconfig
+    sources:
+      - path: AppTests
+    dependencies:
+      - target: Invoices
+      - package: InvoiceCore
+        product: InvoiceCore
+    settings:
+      base:
+        PRODUCT_NAME: InvoicesAppTests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Invoices.app/Contents/MacOS/Invoices"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  Invoices-All:
+    build:
+      targets:
+        Invoices: all
+        InvoiceCoreTests: [test]
+        InvoicesAppTests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - InvoiceCoreTests
+        - InvoicesAppTests
+    run:
+      config: Debug

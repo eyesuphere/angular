@@ -24,16 +24,18 @@ struct InvoiceService {
 
     // MARK: Creating
 
-    /// Creates a draft. A draft carries a provisional number but does not consume one:
-    /// deleting it must not leave a hole in the sequence.
+    /// Creates a draft.
+    ///
+    /// A draft gets a placeholder number, not a provisional one from the real sequence.
+    /// That distinction matters: anything that looks like a real number would be picked
+    /// up when the next invoice is issued, so two open drafts would silently push the
+    /// next issued number from 0001 to 0003. The placeholder is deliberately outside the
+    /// numbering format so `InvoiceNumberFormat.counter(in:year:)` ignores it.
     func createDraft(for client: Client? = nil) -> Invoice {
         let profile = profile()
-        let year = Calendar.current.component(.year, from: .now)
-        let provisional = provisionalNumber(profile: profile, year: year)
-
         let due = Calendar.current.date(byAdding: .day,
                                         value: profile.defaultPaymentTermDays, to: .now)
-        let invoice = Invoice(number: provisional, client: client,
+        let invoice = Invoice(number: placeholderNumber(), client: client,
                               currency: profile.defaultCurrency, dueDate: due)
         invoice.paymentTerms = profile.defaultPaymentTerms
         invoice.notes = profile.defaultNotes
@@ -46,24 +48,41 @@ struct InvoiceService {
         return invoice
     }
 
-    /// A draft number must not collide with an existing one, including other drafts.
-    private func provisionalNumber(profile: BusinessProfile, year: Int) -> String {
-        var sequence = profile.numbering
-        sequence.absorb(existingNumbers: allNumbers(), year: year)
-        var candidate = sequence.peek(year: year)
+    /// The number a draft shows until it is issued. Unique because `Invoice.number` is
+    /// a unique attribute, so a collision would overwrite another draft.
+    static let placeholderPrefix = "DRAFT-"
+
+    private func placeholderNumber() -> String {
         let taken = Set(allNumbers())
-        var bump = 0
-        while taken.contains(candidate) {
-            bump += 1
-            _ = sequence.issue(year: year)
-            candidate = sequence.peek(year: year)
-            if bump > 10_000 { break }
+        var counter = 1
+        while taken.contains("\(Self.placeholderPrefix)\(counter)") {
+            counter += 1
+            if counter > 100_000 { break }
         }
-        return candidate
+        return "\(Self.placeholderPrefix)\(counter)"
+    }
+
+    /// What the next issued invoice will be called, for display next to a draft.
+    func nextIssuedNumber(on date: Date = .now) -> String {
+        let year = Calendar.current.component(.year, from: date)
+        var sequence = profile().numbering
+        sequence.absorb(existingNumbers: issuedNumbers(), year: year)
+        return sequence.peek(year: year)
     }
 
     private func allNumbers() -> [String] {
         (try? context.fetch(FetchDescriptor<Invoice>()).map(\.number)) ?? []
+    }
+
+    /// Only numbers that have actually been issued count towards the sequence. A draft's
+    /// placeholder, or a number hand-typed into one, must not move the watermark.
+    private func issuedNumbers() -> [String] {
+        // Captured rather than inlined, so renaming the enum case cannot leave a
+        // string literal here silently matching nothing.
+        let draftRaw = InvoiceStatus.draft.rawValue
+        let descriptor = FetchDescriptor<Invoice>(
+            predicate: #Predicate { $0.statusRaw != draftRaw })
+        return (try? context.fetch(descriptor).map(\.number)) ?? []
     }
 
     // MARK: Issuing
@@ -96,7 +115,7 @@ struct InvoiceService {
 
         var sequence = profile.numbering
         let year = Calendar.current.component(.year, from: invoice.issueDate)
-        sequence.absorb(existingNumbers: allNumbers(), year: year)
+        sequence.absorb(existingNumbers: issuedNumbers(), year: year)
         invoice.number = sequence.issue(year: year)
         profile.numbering = sequence
 
@@ -121,12 +140,13 @@ struct InvoiceService {
         invoice.status = .cancelled
     }
 
-    /// Creates a credit note that reverses an issued invoice. Quantities are negated so
-    /// the credit note's own totals are positive and reference the original.
+    /// Creates a credit note reversing an issued invoice.
+    ///
+    /// Amounts stay positive: under EN 16931 it is the document type code (381) that
+    /// signals the reversal, not a negative total. A credit note with negative lines is
+    /// a common and rejected mistake.
     func createCreditNote(for invoice: Invoice) -> Invoice {
-        let profile = profile()
-        let year = Calendar.current.component(.year, from: .now)
-        let note = Invoice(number: provisionalNumber(profile: profile, year: year),
+        let note = Invoice(number: placeholderNumber(),
                            client: invoice.client, currency: invoice.currency)
         note.kind = .creditNote
         note.precedingInvoiceNumber = invoice.number

@@ -23,48 +23,89 @@ already a legacy artifact for cross-border B2B work.
 
 So this app competes on compliance plus local data plus buy-once, not on templates.
 
+## Getting it open
+
+```sh
+make bootstrap      # checks Xcode, installs xcodegen
+make project        # generates Invoices.xcodeproj from project.yml
+make open           # opens it
+```
+
+Or without Xcode at all, for the core library:
+
+```sh
+swift test          # runs the InvoiceCore suite
+```
+
+**The `.xcodeproj` is generated, not committed.** `project.yml` is the project; a
+pbxproj is a thousand lines of opaque UUIDs that conflicts on every branch and cannot be
+reviewed. Build settings live in `Config/*.xcconfig` for the same reason, so they survive
+regeneration and show up in a diff.
+
+Three targets: the `Invoices` app, `InvoiceCoreTests` (also runnable via SwiftPM), and
+`InvoicesAppTests` for the SwiftData and service layer. The `Invoices-All` scheme runs
+all of it.
+
 ## Layout
 
 ```
-Package.swift              SwiftPM manifest for the core library
-Sources/InvoiceCore/       Platform-independent: no SwiftUI, SwiftData or AppKit
-  Money.swift              Decimal money, currency minor units, EN 16931 formatting
-  InvoiceDocument.swift     Value types: parties, lines, VAT categories, unit codes
-  InvoiceTotals.swift       The EN 16931 calculation model and VAT breakdown
-  InvoiceNumbering.swift    Gap-free sequential numbering
-  Validation.swift          Pre-flight business rules + IBAN checksum
-  XMLWriter.swift           Order-preserving XML emitter
-  FacturX.swift             CII XML generation, all five profiles
-  FacturXPDFAttacher.swift  PDF/A-3 embedding via incremental update
-  PDFStructure.swift        Just enough PDF parsing to do that safely
-Sources/InvoiceAppMac/     The macOS app: SwiftData models, views, export
-Tests/InvoiceCoreTests/    ~90 tests over the core, plus the reference fixture
+project.yml                  The project. Run `make project` to generate the .xcodeproj
+Config/*.xcconfig            Build settings, reviewable
+Makefile, scripts/           bootstrap, ci
+Package.swift                SwiftPM manifest for the core library
+
+Sources/InvoiceCore/         Platform-independent: no SwiftUI, SwiftData or AppKit
+  Money.swift                Decimal money, currency minor units, EN 16931 formatting
+  InvoiceDocument.swift      Value types: parties, lines, VAT categories, unit codes
+  InvoiceTotals.swift        The EN 16931 calculation model and VAT breakdown
+  InvoiceNumbering.swift     Gap-free sequential numbering
+  Validation.swift           Pre-flight business rules + IBAN checksum
+  XMLWriter.swift            Order-preserving XML emitter
+  FacturX.swift              CII XML generation, all five profiles
+  FacturXPDFAttacher.swift   PDF/A-3 embedding via incremental update
+  PDFStructure.swift         Just enough PDF parsing to do that safely
+
+App/                         The macOS app
+  App.swift, Models.swift, InvoiceService.swift, Views/, Export/
+  Info.plist, Invoices.entitlements, Resources/
+
+Tests/InvoiceCoreTests/      Core suite + the reference XML fixture
+AppTests/                    SwiftData models and InvoiceService, in-memory store
 ```
 
-The split is the point: everything that computes, validates or serialises is in
-`InvoiceCore` and operates on plain values, so it is testable on any platform and does
-not need a live `ModelContext`.
+InvoiceCore is consumed as a local Swift *package*, not as loose files compiled into the
+app. That keeps `import InvoiceCore` meaningful and the module boundary real — the app
+physically cannot reach into the core's internals.
 
 ## Build status — read this first
 
 **Nothing here has been compiled.** It was written in a Linux container with no Swift
-toolchain (`download.swift.org` is blocked by the environment's network policy), so:
+toolchain (`download.swift.org` is blocked by the environment's network policy), and no
+Xcode. So:
 
-- `swift build` and `swift test` have **never been run**. Expect to fix compile errors.
-- The macOS app target needs an Xcode project; SwiftPM only builds `InvoiceCore`.
-- The test suite is written but **unrun**. Treat it as a specification first and a
+- `swift build`, `swift test`, `xcodegen generate` and `xcodebuild` have **never run**.
+  Expect to fix compile errors on the first pass.
+- The test suites are written but **unrun**. Treat them as a specification first and a
   passing suite second.
+- `Config/Shared.xcconfig` pins Swift language mode 5 deliberately. Mode 6 turns
+  actor-isolation problems into errors, and fighting strict concurrency and
+  first-compile errors simultaneously is a bad trade. Raise it once this builds, and
+  expect real work around the `@MainActor` boundaries in `ExportService` and
+  `InvoicePDFRenderer`.
 
 What *was* verified, and how:
 
 | Claim | How it was checked | Result |
 |---|---|---|
-| The PDF incremental-update layout is valid | The byte layout and xref maths were ported to Python and run against **pypdf 6.17** | Catalogue keeps `/Pages`, gains `/AF`, `/Names/EmbeddedFiles` and `/Metadata`; payload round-trips byte-identical; page tree intact |
+| The PDF incremental-update layout is valid | Byte layout and xref maths ported to Python, run against **pypdf 6.17** | Catalogue keeps `/Pages`, gains `/AF`, `/Names/EmbeddedFiles`, `/Metadata`; payload round-trips byte-identical; page tree intact |
 | The reference CII XML is well-formed | `xmllint --noout` | Passes, 117 elements |
 | The reference totals satisfy EN 16931 cross-field rules | Independent `lxml` + `Decimal` check | `1899.95 + 360.99 = 2260.94`, `− 500.00 = 1760.94`; basis matches breakdown |
+| `Info.plist`, entitlements, asset catalogs are well-formed | `plistlib` and `json` parse | All valid |
+| `project.yml` is valid YAML with the expected targets | `yaml.safe_load` | 3 targets, 1 scheme, 1 local package |
+| `Makefile` and shell scripts parse | `make help`, `bash -n` | Clean |
 
-The Python harness lives outside this repo (it was scratch). Its value was finding
-layout bugs before they shipped, not being kept.
+That is structure and syntax, not semantics: nothing confirms XcodeGen accepts the spec
+or that the Swift compiles.
 
 ## Before you ship
 
@@ -84,9 +125,15 @@ layout bugs before they shipped, not being kept.
    complete — XMP `pdfaid` plus an output intent. It does *not* mean the rendered page
    satisfies PDF/A (fonts fully embedded, no transparency), which a Core Graphics
    rendering does not guarantee. Verify with veraPDF.
-4. **Sandbox entitlements.** Saving needs
-   `com.apple.security.files.user-selected.read-write`.
-5. **Cross-reference streams.** The attacher handles classic xref tables, which is what
+4. **Sandbox entitlements** are already set: the app is sandboxed with
+   `files.user-selected.read-write` for the save panel, and deliberately *without* any
+   network entitlement. Local-first is a product claim, and the entitlements file is
+   where it is enforced rather than merely asserted. Adding French PDP transmission will
+   need `network.client`, which is the point at which the claim changes.
+5. **Set a real bundle identifier and team.** `Config/Shared.xcconfig` ships
+   `com.example` and no `DEVELOPMENT_TEAM`, so the project opens and builds locally
+   without credentials.
+6. **Cross-reference streams.** The attacher handles classic xref tables, which is what
    Core Graphics emits, and refuses anything else rather than corrupting it. If you
    swap the renderer, revisit `PDFStructure`.
 

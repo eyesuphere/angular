@@ -1,0 +1,36 @@
+// Settings shared by every target and configuration.
+//
+// Build settings live here rather than inside the generated project so they are
+// reviewable in a diff. project.yml references these files; regenerating the
+// .xcodeproj never discards them.
+
+// macOS 14 is the floor, and not arbitrarily: SwiftData, @Bindable,
+// ContentUnavailableView and ImageRenderer.proposedSize all require it.
+MACOSX_DEPLOYMENT_TARGET = 14.0
+SDKROOT = macosx
+ARCHS = $(ARCHS_STANDARD)
+
+// Swift language mode 5, deliberately. Mode 6 turns actor-isolation problems into
+// errors, and this code has never been compiled; fighting strict concurrency and
+// first-compile errors at the same time is a bad trade. Raise this to 6 once the
+// project builds, and expect real work in the @MainActor boundaries around
+// ExportService and InvoicePDFRenderer.
+SWIFT_VERSION = 5.0
+SWIFT_STRICT_CONCURRENCY = minimal
+SWIFT_UPCOMING_FEATURE_CONCISE_MAGIC_FILE = YES
+
+// Warnings worth having on from the start.
+SWIFT_TREAT_WARNINGS_AS_ERRORS = NO
+GCC_WARN_UNDECLARED_SELECTOR = YES
+CLANG_WARN_DOCUMENTATION_COMMENTS = YES
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+DEAD_CODE_STRIPPING = YES
+
+// Change this before you ship anything. It is also the App Group / keychain prefix
+// if you later add either.
+PRODUCT_BUNDLE_IDENTIFIER_PREFIX = com.example
+
+// Signing is left to Xcode's automatic mode with no team, so the project opens and
+// builds for local use without credentials. Set DEVELOPMENT_TEAM in a local
+// override or in Xcode when you need a signed build.
+CODE_SIGN_STYLE = Automatic

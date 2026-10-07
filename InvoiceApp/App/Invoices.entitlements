@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The app is sandboxed. It has no business reaching outside its container. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- Required for NSSavePanel and NSOpenPanel to actually write and read the file
+	     the user picked. Without this, the export save panel appears, the user chooses
+	     a location, and the write fails. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+
+	<!-- Deliberately absent, and worth keeping absent:
+	       com.apple.security.network.client   — the app talks to no server.
+	       com.apple.security.network.server
+	       com.apple.security.files.downloads.read-write
+	     Local-first is a product claim; the entitlements are where it is actually
+	     enforced rather than merely asserted. Adding a PDP integration for the French
+	     mandate later will need network.client, and that is the point at which the
+	     claim changes. -->
+</dict>
+</plist>

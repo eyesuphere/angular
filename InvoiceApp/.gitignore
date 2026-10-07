@@ -1,6 +1,16 @@
+# The Xcode project is generated from project.yml. Committing it would mean reviewing
+# UUID churn and resolving a conflict in it on every branch.
+Invoices.xcodeproj/
+*.xcworkspace/
+
 .build/
 .swiftpm/
-*.xcodeproj/xcuserdata/
-*.xcworkspace/xcuserdata/
 DerivedData/
+build/
+*.xcuserdatad/
+xcuserdata/
+
+# The ICC profile is fetched per-checkout; see App/Resources/README.md.
+App/Resources/*.icc
+
 .DS_Store
