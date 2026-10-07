@@ -1,4 +1,5 @@
 import Foundation
+import XCTest
 @testable import InvoiceCore
 
 /// The invoice the committed fixture (Fixtures/reference-invoice.xml) describes.
@@ -59,6 +60,32 @@ enum Reference {
             notes: "Thank you for your business.",
             buyerReference: "PO-44182",
             prepaidAmount: Money(Decimal(string: "500.00")!, .eur))
+    }
+}
+
+/// Where the committed fixture lives at runtime.
+///
+/// `Bundle.module` is synthesised by SwiftPM and does not exist when these same files are
+/// compiled by the Xcode test target, so the lookup has to branch on which built them.
+/// SwiftPM defines SWIFT_PACKAGE; Xcode does not.
+enum Fixtures {
+    static var bundle: Bundle {
+        #if SWIFT_PACKAGE
+        return .module
+        #else
+        return Bundle(for: ElementPathCollector.self)
+        #endif
+    }
+
+    /// Loads a fixture, tolerating either layout: SwiftPM's `.copy` preserves the
+    /// Fixtures/ directory, while Xcode flattens resources into the bundle root.
+    static func text(_ name: String, extension ext: String) throws -> String {
+        let url = bundle.url(forResource: name, withExtension: ext, subdirectory: "Fixtures")
+            ?? bundle.url(forResource: name, withExtension: ext)
+        guard let url else {
+            throw XCTSkip("fixture \(name).\(ext) is not in \(bundle.bundlePath)")
+        }
+        return try String(contentsOf: url, encoding: .utf8)
     }
 }
 

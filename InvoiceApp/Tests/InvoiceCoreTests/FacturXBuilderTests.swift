@@ -159,12 +159,8 @@ final class FacturXBuilderTests: XCTestCase {
     /// checked for well-formedness and cross-field arithmetic outside the test suite;
     /// here we assert the generator agrees with it on every element path and value.
     func testAgreesWithCommittedFixture() throws {
-        guard let url = Bundle.module.url(forResource: "reference-invoice",
-                                          withExtension: "xml", subdirectory: "Fixtures")
-                ?? Bundle.module.url(forResource: "reference-invoice", withExtension: "xml") else {
-            throw XCTSkip("fixture not bundled")
-        }
-        let expected = try ElementPathCollector.parse(String(contentsOf: url, encoding: .utf8))
+        let expected = try ElementPathCollector.parse(
+            try Fixtures.text("reference-invoice", extension: "xml"))
         let actual = try ElementPathCollector.parse(builder.xml(for: Reference.invoice))
         XCTAssertEqual(actual.paths, expected.paths, "element order diverged from the fixture")
         for (path, value) in expected.texts {

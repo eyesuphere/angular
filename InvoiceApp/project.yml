@@ -71,6 +71,12 @@ targets:
       Release: Config/Tests.xcconfig
     sources:
       - path: Tests/InvoiceCoreTests
+        excludes:
+          - "Fixtures/**"
+      # Explicit resource phase: the fixture is data the suite reads at runtime, and
+      # SwiftPM's .copy rule has no effect on an Xcode target.
+      - path: Tests/InvoiceCoreTests/Fixtures
+        buildPhase: resources
     dependencies:
       - package: InvoiceCore
         product: InvoiceCore
