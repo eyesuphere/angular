@@ -27,9 +27,11 @@ struct InvoiceApp: App {
         }
         .modelContainer(container)
         .commands {
+            // Removes the default File > New. A new invoice is created from the invoice
+            // list, where the service that assigns its number lives. An empty
+            // ViewBuilder here cannot infer its Content type, so EmptyView is explicit.
             CommandGroup(replacing: .newItem) {
-                // Intentionally empty: a new invoice is created from the invoice list,
-                // where the service that assigns its number lives.
+                EmptyView()
             }
         }
 
